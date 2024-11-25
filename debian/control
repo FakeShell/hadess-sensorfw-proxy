@@ -6,10 +6,9 @@ Build-Depends: cmake,
                dbus,
                libglib2.0-dev,
                libgudev-1.0-dev,
+               libglibutil-dev,
                pkg-config,
-               sensorfw-qt6,
                systemd,
-               qt6-base-dev,
 Maintainer: Bardia Moshiri <bardia@furilabs.com>
 Standards-Version: 4.6.1
 Homepage: https://github.com/furilabs/hadess-sensorfw-proxy
