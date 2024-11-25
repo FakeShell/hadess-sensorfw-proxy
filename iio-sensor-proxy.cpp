@@ -10,16 +10,16 @@
  *
  */
 
+#include <gutil_log.h>
 #include <gudev/gudev.h>
 
 #include "orientation.h"
 #include "iio-sensor-proxy-resources.h"
 
-#include "sensorfw-core/console_log.h"
-#include "sensorfw-core/sensorfw_proximity_sensor.h"
-#include "sensorfw-core/sensorfw_light_sensor.h"
-#include "sensorfw-core/sensorfw_orientation_sensor.h"
-#include "sensorfw-core/sensorfw_compass_sensor.h"
+#include <plugins/sensorfw_proximity_sensor.h>
+#include <plugins/sensorfw_light_sensor.h>
+#include <plugins/sensorfw_orientation_sensor.h>
+#include <plugins/sensorfw_compass_sensor.h>
 
 #define SENSOR_PROXY_DBUS_NAME          "net.hadess.SensorProxy"
 #define SENSOR_PROXY_DBUS_PATH          "/net/hadess/SensorProxy"
@@ -49,23 +49,23 @@ typedef struct {
 	/* Orientation */
 	OrientationUp previous_orientation;
 	gboolean accel_avaliable;
-	std::shared_ptr<sensorfw_proxy::OrientationSensor> orientation_sensor;
+	std::shared_ptr<sensorfw_proxy::core::SensorfwOrientationSensor> orientation_sensor;
 
 	/* Light */
 	gdouble previous_level;
 	gboolean uses_lux;
 	gboolean light_avaliable;
-	std::shared_ptr<sensorfw_proxy::LightSensor> light_sensor;
+	std::shared_ptr<sensorfw_proxy::core::SensorfwLightSensor> light_sensor;
 
 	/* Compass */
 	gdouble previous_heading;
 	gboolean compass_avaliable;
-	std::shared_ptr<sensorfw_proxy::CompassSensor> compass_sensor;
+	std::shared_ptr<sensorfw_proxy::core::SensorfwCompassSensor> compass_sensor;
 
 	/* Proximity */
 	gboolean previous_prox_near;
 	gboolean prox_avaliable;
-	std::shared_ptr<sensorfw_proxy::ProximitySensor> proximity_sensor;
+	std::shared_ptr<sensorfw_proxy::core::SensorfwProximitySensor> proximity_sensor;
 } SensorData;
 
 static const char *
@@ -638,8 +638,6 @@ bus_acquired_handler (GDBusConnection *connection,
 	data->connection = (GDBusConnection *) g_object_ref(connection);
 }
 
-char const *const log_tag = "main";
-
 std::string the_dbus_bus_address()
 {
 	auto const address = std::unique_ptr<gchar, decltype(&g_free)>{
@@ -723,53 +721,48 @@ free_sensor_data (SensorData *data)
 static void
 setup_sensors (SensorData *data)
 {
-	auto const log = std::make_shared<sensorfw_proxy::ConsoleLog>();
-
+	std::string dbus_address = the_dbus_bus_address();
 	try
 	{
-		data->proximity_sensor = std::make_shared<sensorfw_proxy::SensorfwProximitySensor>(log,
-			the_dbus_bus_address());
+		data->proximity_sensor = std::make_shared<sensorfw_proxy::core::SensorfwProximitySensor>(dbus_address);
 		data->prox_avaliable = TRUE;
 	}
 	catch (std::exception const &e)
 	{
-		log->log(log_tag, "Failed to create SensorfwProximitySensor: %s", e.what());
+		GINFO("Failed to create SensorfwProximitySensor: %s", e.what());
 		data->prox_avaliable = FALSE;
 	}
 
 	try
 	{
-		data->light_sensor = std::make_shared<sensorfw_proxy::SensorfwLightSensor>(log,
-			the_dbus_bus_address());
+		data->light_sensor = std::make_shared<sensorfw_proxy::core::SensorfwLightSensor>(dbus_address);
 		data->light_avaliable = TRUE;
 	}
 	catch (std::exception const &e)
 	{
-		log->log(log_tag, "Failed to create SensorfwLightSensor: %s", e.what());
+		GINFO("Failed to create SensorfwLightSensor: %s", e.what());
 		data->light_avaliable = FALSE;
 	}
 
 	try
 	{
-		data->orientation_sensor = std::make_shared<sensorfw_proxy::SensorfwOrientationSensor>(log,
-			the_dbus_bus_address());
+		data->orientation_sensor = std::make_shared<sensorfw_proxy::core::SensorfwOrientationSensor>(dbus_address);
 		data->accel_avaliable = TRUE;
 	}
 	catch (std::exception const &e)
 	{
-		log->log(log_tag, "Failed to create SensorfwOrientationSensor: %s", e.what());
+		GINFO("Failed to create SensorfwOrientationSensor: %s", e.what());
 		data->accel_avaliable = FALSE;
 	}
 
 	try
 	{
-		data->compass_sensor = std::make_shared<sensorfw_proxy::SensorfwCompassSensor>(log,
-			the_dbus_bus_address());
+		data->compass_sensor = std::make_shared<sensorfw_proxy::core::SensorfwCompassSensor>(dbus_address);
 		data->compass_avaliable = TRUE;
 	}
 	catch (std::exception const &e)
 	{
-		log->log(log_tag, "Failed to create SensorfwCompassSensor: %s", e.what());
+		GINFO("Failed to create SensorfwCompassSensor: %s", e.what());
 		data->compass_avaliable = FALSE;
 	}
 }
@@ -787,15 +780,15 @@ int main (int argc, char **argv)
 	setup_dbus (data);
 
 	setup_sensors(data);
-	sensorfw_proxy::HandlerRegistration prox_registration;
-	sensorfw_proxy::HandlerRegistration light_registration;
-	sensorfw_proxy::HandlerRegistration orientation_registration;
-	sensorfw_proxy::HandlerRegistration compass_registration;
+	sensorfw_proxy::core::HandlerRegistration prox_registration;
+	sensorfw_proxy::core::HandlerRegistration light_registration;
+	sensorfw_proxy::core::HandlerRegistration orientation_registration;
+	sensorfw_proxy::core::HandlerRegistration compass_registration;
 
 	if (data->prox_avaliable && data->proximity_sensor) {
 		prox_registration = data->proximity_sensor->register_proximity_handler(
-			[data](sensorfw_proxy::ProximityState state) {
-				data->previous_prox_near = (state == sensorfw_proxy::ProximityState::near);
+			[data](ProximityData value) {
+				data->previous_prox_near = value.withinProximity_;
 				send_dbus_event(data, PROP_PROXIMITY_NEAR);
 			});
 	} else if (data->prox_avaliable) {
@@ -805,9 +798,9 @@ int main (int argc, char **argv)
 
 	if (data->light_avaliable && data->light_sensor) {
 		light_registration = data->light_sensor->register_light_handler(
-			[data](double light) {
-				if (data->previous_level != light) {
-					data->previous_level = light;
+			[data](TimedUnsigned value) {
+				if (data->previous_level != value.value_) {
+					data->previous_level = value.value_;
 					send_dbus_event(data, PROP_LIGHT_LEVEL);
 				}
 			});
@@ -818,24 +811,24 @@ int main (int argc, char **argv)
 
 	if (data->accel_avaliable && data->orientation_sensor) {
 		orientation_registration = data->orientation_sensor->register_orientation_handler(
-			[data](sensorfw_proxy::OrientationData value) {
+			[data](PoseData value) {
 				OrientationUp orientation = data->previous_orientation;
-				switch (value)
+				switch (value.orientation_)
 				{
-				case sensorfw_proxy::OrientationData::LeftUp:
+				case PoseData::Orientation::LeftUp:
 					orientation = ORIENTATION_LEFT_UP;
 					break;
-				case sensorfw_proxy::OrientationData::RightUp:
+				case PoseData::Orientation::RightUp:
 					orientation = ORIENTATION_RIGHT_UP;
 					break;
-				case sensorfw_proxy::OrientationData::BottomUp:
+				case PoseData::Orientation::BottomUp:
 					orientation = ORIENTATION_BOTTOM_UP;
 					break;
-				case sensorfw_proxy::OrientationData::BottomDown:
+				case PoseData::Orientation::BottomDown:
 					orientation = ORIENTATION_NORMAL;
 					break;
-				case sensorfw_proxy::OrientationData::FaceDown:
-				case sensorfw_proxy::OrientationData::FaceUp:
+				case PoseData::Orientation::FaceDown:
+				case PoseData::Orientation::FaceUp:
 					/* Skip FaceDown/FaceUp events */
 					break;
 				default:
@@ -854,9 +847,9 @@ int main (int argc, char **argv)
 
 	if (data->compass_avaliable && data->compass_sensor) {
 		compass_registration = data->compass_sensor->register_compass_handler(
-			[data](int heading) {
-				if (data->previous_heading != heading) {
-					data->previous_heading = heading;
+			[data](CompassData value) {
+				if (data->previous_heading != value.degrees_) {
+					data->previous_heading = value.degrees_;
 					send_dbus_event(data, PROP_COMPASS_HEADING);
 				}
 			});
